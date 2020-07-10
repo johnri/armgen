@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -8,14 +9,6 @@ namespace armgen
 {
     internal static class Program
     {
-        public class Plane
-        {
-            public string Code { get; set; }
-            public string DisplayName { get; set; }
-            public bool HasInstances { get; set; }
-            public bool HasRegions { get; set; }
-        }
-
         private static readonly string Prefix = "vscs";
         private static readonly string[] Components = new[] { "core", "codesp", "collab", "comm" };
         private static readonly string[] Environments = new[] { "dev", "ppe", "prod" };
@@ -29,7 +22,9 @@ namespace armgen
 
         static void Main(string[] args)
         {
-            var outputDir = args.FirstOrDefault();
+            var templateDir = args.Length == 1 ? args[0] : null;
+            var outputDir = args.Length == 2 ? args[1] : null;
+
             if (outputDir == null)
             {
                 outputDir = Path.Combine(Environment.CurrentDirectory, "out");
@@ -80,7 +75,7 @@ namespace armgen
             }
 
             WriteGroups(groups);
-            CreateGroupOutput(outputDir, groups);
+            CreateGroupOutput(templateDir, outputDir, groups);
         }
 
         public static void WriteGroups(IDictionary<string, IDictionary<string, string>> groups)
@@ -90,8 +85,15 @@ namespace armgen
             Console.WriteLine();
         }
 
-        public static void CreateGroupOutput(string outputDir, IDictionary<string, IDictionary<string, string>> groups)
+        public static void CreateGroupOutput(string templateDir, string outputDir, IDictionary<string, IDictionary<string, string>> groups)
         {
+            var templateFiles = Enumerable.Empty<string>();
+            if (!string.IsNullOrEmpty(templateDir))
+            {
+                templateFiles = Directory.EnumerateFiles(templateDir);
+            }
+            var templateFileDimensions = templateFiles.ToDictionary(item => item, item => GetTemplateFileDimensions(item));
+
             if (!string.IsNullOrEmpty(outputDir))
             {
                 Directory.CreateDirectory(outputDir);
@@ -99,13 +101,83 @@ namespace armgen
                 foreach (var groupItem in groups)
                 {
                     var group = groupItem.Value;
+                    var groupDimensions = GetGroupDimensions(group);
                     var dir = Path.Combine(outputDir, group["outputPath"]);
                     var nameFile = Path.Combine(outputDir, group["nameFile"]);
                     Directory.CreateDirectory(dir);
                     var json = JsonSerializer.Serialize(group, new JsonSerializerOptions { WriteIndented = true });
                     File.WriteAllText(nameFile, json);
+
+                    foreach (var templateFile in templateFileDimensions
+                        .Where(item => item.Value.Equals(groupDimensions))
+                        .Select(item => item.Key))
+                    {
+                        var contents = File.ReadAllText(templateFile);
+                        contents = ReplaceContents(contents, group);
+
+                        var fileName = Path.GetFileName(templateFile);
+                        fileName = ReplaceFilenameDimensions(fileName, group);
+
+                        var outputFile = Path.Combine(dir, fileName);
+                        File.WriteAllText(outputFile, contents);
+                    }
                 }
             }
+        }
+
+        public static string ReplaceContents(string contents, IDictionary<string, string> group)
+        {
+            foreach (var item in group)
+            {
+                var replaceKey = $"__{item.Key}__";
+                var replaceValue = item.Value;
+                contents = contents.Replace(replaceKey, replaceValue);
+            }
+
+            return contents;
+        }
+
+        public static string ReplaceFilenameDimensions(string filename, IDictionary<string, string> group)
+        {
+            foreach (var key in new[] { "env", "plane", "instance", "region" })
+            {
+                if (group.TryGetValue(key, out string dimension))
+                {
+                    filename = filename.Replace($"{{{key}}}", dimension);
+                }
+            }
+
+            return filename;
+        }
+
+        public static Dimensions GetGroupDimensions(IDictionary<string, string> group)
+        {
+            var env = group.ContainsKey("env");
+            var plane = group.ContainsKey("plane");
+            var instance = group.ContainsKey("instance");
+            var region = group.ContainsKey("region");
+            return new Dimensions
+            {
+                Env = env,
+                Plane = plane,
+                Instance = instance,
+                Region = region
+            };
+        }
+
+        public static Dimensions GetTemplateFileDimensions(string filename)
+        {
+            var env = filename.Contains("{env}", StringComparison.OrdinalIgnoreCase);
+            var plane = filename.Contains("{plane}", StringComparison.OrdinalIgnoreCase);
+            var instance = filename.Contains("{instance}", StringComparison.OrdinalIgnoreCase);
+            var region = filename.Contains("{region}", StringComparison.OrdinalIgnoreCase);
+            return new Dimensions
+            {
+                Env = env,
+                Plane = plane,
+                Instance = instance,
+                Region = region
+            };
         }
 
         public static IDictionary<string, string> BuildGroup(
@@ -172,6 +244,47 @@ namespace armgen
 
 
             return names;
+        }
+    }
+
+    public class Plane
+    {
+        public string Code { get; set; }
+        public string DisplayName { get; set; }
+        public bool HasInstances { get; set; }
+        public bool HasRegions { get; set; }
+    }
+
+    public class Dimensions : IEquatable<Dimensions>
+    {
+        public bool Env { get; set; }
+        public bool Plane { get; set; }
+        public bool Instance { get; set; }
+        public bool Region { get; set; }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is Dimensions other)
+            {
+                return Equals(other);
+            }
+
+            return false;
+        }
+
+        public bool Equals([AllowNull] Dimensions other)
+        {
+            if (other is null) return false;
+
+            return Env == other.Env &&
+                Plane == other.Plane &&
+                Instance == other.Instance &&
+                Region == other.Region;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(Env, Plane, Instance, Region);
         }
     }
 }

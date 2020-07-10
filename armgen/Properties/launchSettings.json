@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "armgen": {
+      "commandName": "Project",
+      "commandLineArgs": "c:\\repos\\github\\johnri\\personal\\armgen\\templates"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+    "Id": "__id__",
+    "Component": "__component__",
+    "Environment": "__env__",
+    "Plane": "__plane__",
+    "Instance": "__instance__",
+    "Region": "__region__"
+}
