@@ -57,9 +57,12 @@ namespace armgen
                             {
                                 AddGroup(BuildGroup(component, env, plane, instance));
 
-                                foreach (var region in Regions)
+                                if (plane.HasRegions)
                                 {
-                                    AddGroup(BuildGroup(component, env, plane, instance, region));
+                                    foreach (var region in Regions)
+                                    {
+                                        AddGroup(BuildGroup(component, env, plane, instance, region));
+                                    }
                                 }
                             }
                         }
